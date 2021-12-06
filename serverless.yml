@@ -1,0 +1,110 @@
+service: cognito-authentication
+
+# frameworkVersion: ">=1.1.0 <2.0.0"
+
+package:
+  individually: false
+
+plugins:
+  - serverless-bundle
+
+custom:
+  stage: ${opt:stage, self:provider.stage}
+  poolName: ${self:custom.stage}-user-pool
+  cognito:
+    poolId: !Ref CognitoUserPoolMyUserPool
+    COGNITO_POOL_ARN: !GetAtt CognitoUserPoolMyUserPool.Arn
+    poolName: !GetAtt CognitoUserPoolMyUserPool.ProviderName
+    clientId: !Ref CognitoUserPoolClient
+    COGNITO_POOL_GROUP_NAME: !Ref CognitoUserPoolGroup
+
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: dev
+  region: ap-south-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - sns:*
+      Resource:
+        - "*"
+  environment:
+    CLIENT_ID: ${self:custom.cognito.clientId}
+    POOL_ID: ${self:custom.cognito.poolId}
+    POOL_NAME: ${self:custom.poolName}
+    COGNITO_POOL_GROUP_NAME: ${self:custom.cognito.COGNITO_POOL_GROUP_NAME}
+    COGNITO_POOL_GROUP_ARN: ${self:custom.cognito.COGNITO_POOL_ARN}
+  lambdaHashingVersion: 20200924
+
+functions:
+  preSignUp:
+    handler: functions/pre-signup.main
+    events:
+      - cognitoUserPool:
+          pool: ${self:custom.poolName}
+          trigger: PreSignUp
+  
+  # defineAuthChallenge:
+  #   handler: functions/define-auth-challenge.main
+  #   events:
+  #     - cognitoUserPool:
+  #         pool: MyUserPool
+  #         trigger: DefineAuthChallenge
+
+  # createAuthChallenge:
+  #   handler: functions/create-auth-challenge.main
+  #   events:
+  #     - cognitoUserPool:
+  #         pool: MyUserPool
+  #         trigger: CreateAuthChallenge
+
+  # verifyAuthChallengeResponse:
+  #   handler: functions/verify-auth-challenge-response.main
+  #   events:
+  #     - cognitoUserPool:
+  #         pool: MyUserPool
+  #         trigger: VerifyAuthChallengeResponse
+  registerUser:
+    handler: functions/register.handler
+    events:
+      - http:
+          method: POST
+          path: /user/register
+
+resources:
+  Resources:
+    CognitoUserPoolMyUserPool:
+      Type: "AWS::Cognito::UserPool"
+      Properties:
+        # Generate a name based on the stage
+        UserPoolName: ${self:custom.poolName}
+        # Set phone_number as an alias
+        UsernameAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: True
+            RequireNumbers: True
+            RequireSymbols: True
+            RequireUppercase: True
+
+    CognitoUserPoolClient:
+      Type: "AWS::Cognito::UserPoolClient"
+      Properties:
+        # Generate an app client name based on the stage
+        ClientName: ${self:custom.stage}-sms-auth-client
+        UserPoolId:
+          Ref: CognitoUserPoolMyUserPool
+        ExplicitAuthFlows:
+          - CUSTOM_AUTH_FLOW_ONLY
+        GenerateSecret: false
+        
+    CognitoUserPoolGroup:
+      Type: "AWS::Cognito::UserPoolGroup"
+      Properties: 
+        GroupName: "testAdmin"
+        UserPoolId: 
+          Ref: CognitoUserPoolMyUserPool
